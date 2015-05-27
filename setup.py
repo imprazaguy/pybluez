@@ -1,9 +1,12 @@
 #!/usr/bin/env python
 
-from distutils.core import setup, Extension
 import sys
 import platform
 import os
+
+import ez_setup
+ez_setup.use_setuptools()
+from setuptools import setup, Extension
 
 mods = []
 
