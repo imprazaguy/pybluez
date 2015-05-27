@@ -44,6 +44,9 @@ Local naming conventions:
 #include <bluetooth/sdp_lib.h>
 #include "btsdp.h"
 
+#define HCI_CHANNEL_RAW         0
+#define HCI_CHANNEL_USER        1
+
 /* Socket object documentation */
 PyDoc_STRVAR(sock_doc,
 "BluetoothSocket(proto=RFCOMM) -> bluetooth socket object\n\
@@ -1944,6 +1947,71 @@ bt_hci_open_dev(PyObject *self, PyObject *args)
 
 PyDoc_STRVAR(bt_hci_open_dev_doc, "hci_open_dev");
 
+int
+hci_new_user_channel(uint16_t index, uint16_t channel)
+{
+    struct sockaddr_hci addr;
+    int fd;
+
+    fd = socket(PF_BLUETOOTH, SOCK_RAW, BTPROTO_HCI);
+    if (fd < 0)
+        return -1;
+
+    memset(&addr, 0, sizeof(addr));
+    addr.hci_family = AF_BLUETOOTH;
+    addr.hci_dev = index;
+    addr.hci_channel = channel;
+
+    if (bind(fd, (struct sockaddr *) &addr, sizeof(addr)) < 0) {
+        close(fd);
+        return -1;
+    }
+
+    return fd;
+}
+
+/*
+ * params:  (int) device number
+ * effect: opens and binds a new HCI socket
+ * return: a PySocketSockObject, or NULL on failure
+ */
+static PyObject *
+bt_hci_new_user_channel(PyObject *self, PyObject *args)
+{
+    int dev = -1, fd;
+    PySocketSockObject *s = NULL;
+
+    if ( !PyArg_ParseTuple(args, "|i", &dev) )
+    {
+        return NULL;
+    }
+
+    // if the device was not specified, just use the first available bt device
+    if (dev < 0) {
+        dev = hci_get_route(NULL);
+    }
+
+    if (dev < 0) {
+        PyErr_SetString(bluetooth_error, "no available bluetoot devices");
+        return 0;
+    }
+
+    Py_BEGIN_ALLOW_THREADS
+    fd = hci_new_user_channel(dev, HCI_CHANNEL_USER);
+    Py_END_ALLOW_THREADS
+
+    s = (PySocketSockObject *)PyType_GenericNew(&sock_type, NULL, NULL);
+    if (s != NULL) init_sockobject(s, fd, AF_BLUETOOTH, SOCK_RAW, BTPROTO_HCI);
+
+    return (PyObject*)s;
+}
+
+PyDoc_STRVAR(bt_hci_new_user_channel_doc,
+"hci_new_user_channel(dev)\n\
+\n\
+Create HCI socket object by device id.");
+
+
 /*
  * params: (int) device number
  * effect: closes an HCI socket
@@ -2820,6 +2888,7 @@ static PyMethodDef bt_methods[] = {
     DECL_BT_METHOD( hci_read_clock, METH_VARARGS ),
     DECL_BT_METHOD( hci_acl_conn_handle, METH_VARARGS ),
     DECL_BT_METHOD( hci_open_dev, METH_VARARGS ),
+    DECL_BT_METHOD( hci_new_user_channel, METH_VARARGS ),
     DECL_BT_METHOD( hci_close_dev, METH_VARARGS ),
     DECL_BT_METHOD( hci_send_cmd, METH_VARARGS ),
     DECL_BT_METHOD( hci_send_req, METH_VARARGS | METH_KEYWORDS ),
